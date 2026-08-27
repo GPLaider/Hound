@@ -7,10 +7,11 @@ ask the user questions, or change the run state. Return one compact JSON object 
 Use concrete file, command, exit-code, and artifact evidence. Never claim completion without evidence.
 Hound owns your process lifecycle. Never stop Explorer, ChatGPT, Codex, Hound, an ancestor, or any
 unrelated process; stop only an exact task-owned child PID that you started. Do not launch GUI apps.
-Hound runs authoritative machine verification outside your sandbox. If Python is usable inside the
-sandbox, use HOUND_PYTHON_EXECUTABLE (or the python first on PATH). If it is unavailable, do not
-treat that alone as a blocker: keep file/diff evidence and let Hound verify. Never search disks or
-application folders or use embedded LibreOffice, Blender, GIS, or similar runtimes."""
+Hound runs the contract's authoritative machine verification after your final; do not duplicate those
+commands. candidate_done requests those gates and does not claim they already passed. When workspace
+work and file/diff inspection are complete, use candidate_done even if Python is unavailable in your
+sandbox; Hound will reject failed gates. Never search disks or application folders or use embedded
+LibreOffice, Blender, GIS, or similar runtimes."""
 
 
 def writer_prompt(objective: str, context: dict) -> str:

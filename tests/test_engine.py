@@ -404,6 +404,12 @@ def test_resume_rehydrates_partial_pack_evidence_after_prepack_checkpoint(tmp_pa
     assert state.rounds[-1]["evidence_hash"] != evidence_hash and state.idle_rounds == 0
 
 
+def test_writer_prompt_defers_authoritative_verification_to_hound():
+    prompt = writer_prompt("audit", {})
+    assert "do not duplicate those" in prompt
+    assert "candidate_done requests those gates" in prompt
+
+
 def test_recovery_redacts_agentflow_run_artifacts_after_crash(tmp_path: Path, monkeypatch):
     secret = "hound-resume-secret-value"
     monkeypatch.setenv("HOUND_TEST_SECRET", secret)

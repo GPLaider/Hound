@@ -35,3 +35,4 @@
 33. Start Windows children with no console window and process-error dialogs suppressed. A termination guard refusal is durable evidence and never falls through to another kill mechanism.
 34. Copy authentication and non-system user skills only for real Codex/AgentFlow launches; exclude `config.toml`, `.system`, caches, and bytecode. Delete isolated homes on normal CLI exit; after a hard crash, reap only Hound-marked direct Temp children whose filename owner PID is no longer live.
 35. Validate imported AgentFlow final responses with the same closed Scout schema as direct Codex workers. A completed native node carrying only JSONL progress is failed evidence, never a completed Scout result.
+36. Treat `candidate_done` as a request for Hound's authoritative machine and final-review gates. Writers must not duplicate contract verification or remain `continue` only because worker-local Python is unavailable.

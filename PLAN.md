@@ -11,7 +11,7 @@
 - [x] Correct reference-license attribution and document deliberate scope decisions.
 - [x] Add safe Python verification defaults and durable proposal-only contracts for ambiguous package-marker commands.
 - [x] Recover completed Writer finals, review attempts, and native AgentFlow node results without replaying uncertain work.
-- [x] Re-run the hardened full suite with warnings as errors: 161 collected, all passed, exit `0`.
+- [x] Re-run the hardened full suite with warnings as errors: 162 collected, all passed, exit `0`.
 - [x] Reject malformed AgentFlow completed-node output, publish CI coverage, and modernize package license metadata.
 - [x] Prove an exact Windows worker timeout leaves Explorer, ChatGPT, Codex, and Hound alive.
 - [x] Complete real Codex Solo and two-Scout AgentFlow runs with global-config hash stability.

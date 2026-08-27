@@ -20,12 +20,13 @@ The 0.2.0 safety overhaul, release measurement, real Codex Solo smoke, real Agen
 
 ## Current evidence
 
-- Full suite: 161 tests collected; all passed with warnings promoted to errors, exit `0`.
+- Full suite: 162 tests collected; all passed with warnings promoted to errors, exit `0`.
 - `pyproject.toml` declares no mandatory runtime dependencies; `pytest>=8` is test-only.
 - Static Windows termination boundary: guarded exact worker PID-tree `taskkill.exe`; `CTRL_C_EVENT`, `CTRL_BREAK_EVENT`, and `GenerateConsoleCtrlEvent` remain forbidden.
-- Final source: 20 Python modules, 5,315 physical lines, 253,511 bytes. Largest modules are `process.py` 762, `engine.py` 604, and `pack.py` 491 lines; the 500-line target remains soft.
-- Final wheel: 73,101 bytes, SHA-256 `07395becafefa1819bc7e63342a49e9e7df91e519aabaf9d82101761597c95db`. Final sdist: 99,621 bytes, SHA-256 `48819aabf711afa5f9e70f1403dffd492cc8559751f21ac3f1a94ca391a410d9`. Both carry `License-Expression: MIT`, `LICENSE`, and `NOTICE.md`; the isolated wheel installation contains 50 files and 645,308 bytes after `--version` and `doctor`.
+- Final source: 20 Python modules, 5,316 physical lines, 253,583 bytes. Largest modules are `process.py` 762, `engine.py` 604, and `pack.py` 491 lines; the 500-line target remains soft.
+- Final wheel: 73,162 bytes, SHA-256 `60290df2933ff625be566c9ab9574dc05e49910e7a796aa4a2d41a9d8c1f8d7c`. Final sdist: 99,785 bytes, SHA-256 `7cfada915227e63456f53598b49f4f81df78711f557a7782ac05acdf3b4a6cb5`. Both carry `License-Expression: MIT`, `LICENSE`, and `NOTICE.md`; the isolated wheel installation contains 50 files and 645,610 bytes after `--version` and `doctor`.
 - Release audit run `20260826-235755-aabe1f86` passed Hound's authoritative pytest and compile gates and used AgentFlow run `91e1b6ca6f334a0b98146b25b6254d99`. It exposed a native completed node whose JSONL progress event had been mistaken for a Scout final; strict schema validation now rejects that result, with a focused regression test.
+- Read-only acceptance run `20260827-001518-d3f27f1c` proved the authoritative gates pass but exposed a Writer handoff ambiguity: worker-local Python was unavailable, so the Writer returned `continue` even though Hound then passed both gates. The common prompt now defines `candidate_done` as a request for Hound-run gates and forbids duplicating them; a focused regression locks that contract.
 - Self-host discovery/fix run `20260824-141347-5ec8034b` used AgentFlow runs `ba7f91434473461386c80bb114b0307f` and `afba20e5e88043e1b89ce54c56919c94`, then fixed the Windows live-worker creation-time hydration gap with one focused regression. Its evidence-first three-round contract exhausted before final review; the follow-up read-only acceptance run supplies the terminal verdict.
 - Real Codex Solo run `20260824-035223-df426218`: one Writer plus one read-only Verifier, machine verification passed, Verifier accepted, durable `DONE`, exit `0`, and only `answer.py` changed.
 - Real AgentFlow run `6e6728ed4c074e3cbe27dea82aea2d46`: two independent read-only Scouts completed and reported `alpha = 1` and `beta = 2`; `facts.txt` stayed byte-identical.
