@@ -1,6 +1,6 @@
 # Decisions
 
-1. Implement in the empty repository root, `C:\Users\Administrator\Documents\ChatGPT\hound`.
+1. Implement in an empty repository root.
 2. Runtime dependencies remain zero; `pytest` is test-only.
 3. Use a fixed state machine, not a public DAG DSL.
 4. Default to one Writer. Pack is conditional and capped by configured concurrency.
@@ -10,7 +10,7 @@
 8. Use deterministic live scoring first. Invoke one semantic Judge only when deterministic separation is insufficient.
 9. Copy no reference source. Preserve commit and license evidence in `NOTICE.md` and `docs/reference-audit.md`.
 10. Do not auto-install the skill or modify global Codex configuration.
-11. Hound owns persistence, the sole Writer, and completion. A qualified Pack `auto` is AgentFlow-first whenever at least two distinct independent missions fit parallel capacity; direct supervision is the optional-runtime fallback. No AgentFlow Python dependency or public DAG is added.
+11. Hound owns persistence, the sole Writer, and completion. A qualified Pack `auto` prefers AgentFlow when native member culling is safe or unnecessary; otherwise it selects guarded direct supervision. No AgentFlow Python dependency or public DAG is added.
 12. AgentFlow mode uses one native Scout fanout and, when platform, policy, and budget allow, a read-only periodic controller. Hound audits its native action envelope and applied-action log; only one confirmed member cancellation per compliant tick is accepted. Windows omits that controller because AgentFlow's local runner bypasses Hound's guarded PID-tree termination; guarded direct mode owns Windows live culling.
 13. Production Codex prompts travel over stdin, complete process output stays in artifacts, and only bounded tails stay in supervisor memory.
 14. Resolve child executables explicitly without Windows' implicit current-directory lookup; use ephemeral Codex workers because Hound owns persistence, and isolate their `CODEX_HOME` so Codex cannot persist project trust into the user's global config. Snapshot non-system user skills into that home so required safety skills remain available without loading global config.

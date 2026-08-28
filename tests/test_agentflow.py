@@ -114,6 +114,31 @@ def test_engine_auto_pack_prefers_agentflow_for_parallel_hunt(tmp_path: Path):
     assert selection["qualified_parallel_pack"] is True
 
 
+def test_auto_pack_routes_to_direct_when_native_member_culling_is_unsafe(tmp_path: Path):
+    fake_codex = Path(__file__).with_name("fake_agent.py")
+    engine = Engine(tmp_path, CodexAdapter(prefix=[sys.executable, str(fake_codex)]),
+                    {"agentflow": {"enabled": True}})
+    engine.agentflow = agentflow()
+    engine.agentflow._native_member_culling = lambda: False
+
+    async def direct(*_args, **_kwargs):
+        return [{"backend": "direct"}]
+
+    engine.pack.direct = direct
+    contract = RunContract("hunt", str(tmp_path), budget=Budget(max_total_workers=5),
+                           pack=PackPolicy(mode="on", backend="auto", initial_workers=2,
+                                           concurrency=2, survivors=1))
+    state = engine.new_run(contract); state.status = RunStatus.WORKING
+    results = asyncio.run(engine._pack(
+        state, contract, engine.store.run_dir(state.run_id) / "rounds" / "001", {}, {}))
+    events = [json.loads(line) for line in
+              (engine.store.run_dir(state.run_id) / "events.jsonl").read_text().splitlines()]
+    selection = next(event for event in events if event["type"] == "pack_backend_selected")
+    assert results == [{"backend": "direct"}]
+    assert selection["selected_backend"] == "direct"
+    assert selection["guarded_direct_culling_required"] is True
+
+
 def test_agentflow_imports_only_applied_controller_cull(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HOUND_FAKE_AGENTFLOW_CULL", "1")
     round_dir = tmp_path / "rounds" / "001"

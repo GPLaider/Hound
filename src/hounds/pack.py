@@ -61,14 +61,20 @@ class PackController:
         available = self.engine.agentflow.available() if backend != "direct" else False
         if backend == "agentflow" and not available:
             raise AgentFlowPackError("AgentFlow Pack requested but executable was not found")
-        qualified = len(self._agentflow_plan(state, contract, writer)[0]) >= 2
+        missions, _ = self._agentflow_plan(state, contract, writer)
+        qualified = len(missions) >= 2
+        guarded_direct_culling_required = (
+            len(missions) > contract.pack.survivors and
+            not self.engine.agentflow._native_member_culling())
         use_agentflow = backend == "agentflow" or (
-            backend == "auto" and configured and available and qualified)
+            backend == "auto" and configured and available and qualified and
+            not guarded_direct_culling_required)
         if backend == "auto":
             self.engine.store.event(
                 state.run_id, "pack_backend_selected",
                 selected_backend="agentflow" if use_agentflow else "direct",
                 qualified_parallel_pack=qualified,
+                guarded_direct_culling_required=guarded_direct_culling_required,
                 agentflow_configured=configured, agentflow_available=available)
         if use_agentflow:
             try:
