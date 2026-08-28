@@ -15,7 +15,7 @@ Audited 2026-08-22 from read-only clones:
 | checklist/plan resume | Boulder plan progress | resume/rerun | yes | last durable round, no DAG |
 | verify before completion | Oracle/evidence gates | success evaluators | yes | machine gate + Verifier |
 | parallel spawn/fan-out | specialist/background workers | graph fan-out | conditional | AgentFlow-first for qualified read-only missions; direct fallback |
-| worker cancellation | background task lifecycle | runner cancellation | yes | guarded whole AgentFlow PID tree; direct per-Scout culling |
+| worker cancellation | background task lifecycle | runner cancellation | yes | guarded whole AgentFlow PID tree; audited native member culling off Windows; guarded direct per-Scout culling on Windows |
 | retry | continuation loop | node retries | yes | bounded Writer rounds; one AgentFlow node retry |
 | partial artifacts/events | session evidence | stdout/stderr/trace/events | yes | Hound artifacts plus imported AgentFlow node records |
 | single writer/worktrees | deep worker discipline | optional worktrees | strict single Writer | workspace lock, no fan-out writes |

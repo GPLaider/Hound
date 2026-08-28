@@ -23,13 +23,14 @@ def test_actual_self_crash_resumes_without_killing_hound_or_worker(tmp_path: Pat
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, err = await asyncio.wait_for(crashed.communicate(), 10)
         assert crashed.returncode == 86, (out + err).decode(errors="replace")
+        hound_pid = int((tmp_path / "hound-pid.txt").read_text(encoding="ascii"))
         run_id = (tmp_path / "run-id.txt").read_text(encoding="ascii")
         run_dir = RunStore(tmp_path).run_dir(run_id)
         launch = json.loads((run_dir / "rounds" / "001" / "writer" /
                              "launch.json").read_text())
-        assert launch["hound_pid"] == crashed.pid
-        assert launch["worker_ppid"] == crashed.pid
-        assert launch["worker_pid"] not in {os.getpid(), crashed.pid}
+        assert launch["hound_pid"] == hound_pid
+        assert launch["worker_ppid"] == hound_pid
+        assert launch["worker_pid"] not in {os.getpid(), hound_pid}
         for _ in range(300):
             if not pid_alive(launch["worker_pid"]):
                 break

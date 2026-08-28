@@ -29,12 +29,14 @@ class PackController:
     def __init__(self, engine: Engine):
         self.engine = engine
 
-    def missions(self, state: RunState, contract: RunContract, writer: dict) -> list[str]:
+    def missions(self, state: RunState, contract: RunContract, writer: dict,
+                 reserve_controller: bool = False) -> list[str]:
         requested = parallel_missions(writer)
         defaults = ["reproduce the failure and extract exact logs",
                     "trace relevant code paths and state transitions",
                     "try to disprove the current root-cause hypothesis"]
-        available = max(0, contract.budget.max_total_workers - state.total_workers - 2)
+        reserved = 3 if reserve_controller else 2  # Writer, Verifier, optional controller.
+        available = max(0, contract.budget.max_total_workers - state.total_workers - reserved)
         count = min(contract.pack.initial_workers, contract.pack.maximum_workers,
                     contract.pack.concurrency, available)
         missions: dict[str, str] = {}
@@ -43,6 +45,15 @@ class PackController:
             missions.setdefault(mission.casefold(), mission)
         return list(missions.values())[:count]
 
+    def _agentflow_plan(self, state: RunState, contract: RunContract,
+                        writer: dict) -> tuple[list[str], bool]:
+        if (contract.pack.semantic_judge and
+                self.engine.agentflow._native_member_culling()):
+            missions = self.missions(state, contract, writer, reserve_controller=True)
+            if len(missions) > contract.pack.survivors:
+                return missions, True
+        return self.missions(state, contract, writer), False
+
     async def run(self, state: RunState, contract: RunContract, round_dir: Path,
                   context: dict, writer: dict) -> list[dict]:
         backend = contract.pack.backend
@@ -50,7 +61,7 @@ class PackController:
         available = self.engine.agentflow.available() if backend != "direct" else False
         if backend == "agentflow" and not available:
             raise AgentFlowPackError("AgentFlow Pack requested but executable was not found")
-        qualified = len(self.missions(state, contract, writer)) >= 2
+        qualified = len(self._agentflow_plan(state, contract, writer)[0]) >= 2
         use_agentflow = backend == "agentflow" or (
             backend == "auto" and configured and available and qualified)
         if backend == "auto":
@@ -76,14 +87,24 @@ class PackController:
                         context: dict, writer: dict) -> list[dict]:
         self.engine._transition(state, RunStatus.SCOUTING)
         self.engine.store.save_state(state)
-        missions = self.missions(state, contract, writer)
+        missions, use_controller = self._agentflow_plan(state, contract, writer)
         if not missions:
             return []
-        state.total_workers += len(missions)
+        state.total_workers += len(missions) + int(use_controller)
         self.engine.store.save_state(state)
         self.engine.store.event(
             state.run_id, "pack_started", backend="agentflow",
-            workers=[f"scout-{state.round}-{index}" for index in range(1, len(missions) + 1)])
+            workers=([f"scout-{state.round}-{index}"
+                      for index in range(1, len(missions) + 1)] +
+                     (["scout-controller"] if use_controller else [])))
+        culling_policy = {
+            "minimum_runtime_seconds": contract.pack.minimum_runtime_seconds,
+            "minimum_progress_events": contract.pack.minimum_progress_events,
+            "judge_interval_seconds": contract.pack.judge_interval_seconds,
+            "cooldown_seconds": contract.pack.cull_cooldown_seconds,
+            "minimum_score_gap": contract.pack.minimum_score_gap,
+            "survivors": contract.pack.survivors,
+        } if use_controller else None
         results = await self.engine.agentflow.run(
             contract.objective, missions, context, self.engine.workspace, round_dir,
             contract.pack.concurrency,
@@ -91,11 +112,23 @@ class PackController:
             self.engine.config.get("codex", {}).get("scout_model", ""),
             self.engine.store.run_dir(state.run_id) / "cancel.requested",
             maximum_prompt_bytes=self.engine.context_limit,
-            maximum_trace_bytes=self.engine.trace_limit)
+            maximum_trace_bytes=self.engine.trace_limit,
+            culling_policy=culling_policy,
+            controller_model=self.engine.config.get("codex", {}).get("judge_model", ""),
+            controller_timeout=float(
+                self.engine.config.get("workers", {}).get("judge_timeout_seconds", 300)))
         ranked = sorted(results, key=lambda item: (
             item.get("score", 0), item.get("status") == "completed", item.get("worker_id", "")),
                         reverse=True)
-        retained = {item["worker_id"] for item in ranked[:max(1, contract.pack.survivors)]}
+        for order, item in enumerate(
+                (result for result in results if result.get("status") == "culled"), 1):
+            self.engine.store.event(
+                state.run_id, "worker_culled", worker_id=item["worker_id"],
+                agentflow_node_id=item.get("agentflow_node_id"), score=item.get("score", 0),
+                reason=item.get("cull_reason"), order=order)
+        eligible = [item for item in ranked if item.get("status") != "culled"]
+        retained = {item["worker_id"]
+                    for item in eligible[:max(1, contract.pack.survivors)]}
         for item in results:
             item["retained"] = item["worker_id"] in retained
             atomic_json(round_dir / "scouts" / item["worker_id"] / "result.json", item)

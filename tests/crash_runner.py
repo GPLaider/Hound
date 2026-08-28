@@ -25,6 +25,7 @@ class SelfCrashAdapter(CodexAdapter):
 async def main() -> None:
     root = Path(sys.argv[1]).resolve()
     fake = Path(sys.argv[2]).resolve()
+    (root / "hound-pid.txt").write_text(str(os.getpid()), encoding="ascii")
     engine = Engine(root, SelfCrashAdapter(prefix=[sys.executable, str(fake)]), {})
     contract = RunContract("resume after crash", str(root), [[sys.executable, "-V"]],
                            budget=Budget(max_rounds=3), pack=PackPolicy(mode="off"))

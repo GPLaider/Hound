@@ -18,25 +18,40 @@ from hounds.recovery import recover_interrupted_async
 FAKE_AGENTFLOW = Path(__file__).with_name("fake_agentflow.py")
 PARALLEL_REQUEST = {"parallel_request": {
     "needed": True, "missions": ["inspect logs", "trace code"]}}
+CULLING_POLICY = {"minimum_runtime_seconds": 25, "minimum_progress_events": 2,
+                  "judge_interval_seconds": 40, "cooldown_seconds": 15,
+                  "minimum_score_gap": 8, "survivors": 1}
 
 
 def agentflow() -> AgentFlowPack:
-    return AgentFlowPack(prefix=[sys.executable, str(FAKE_AGENTFLOW)])
+    pack = AgentFlowPack(prefix=[sys.executable, str(FAKE_AGENTFLOW)])
+    pack._native_member_culling = lambda: True
+    return pack
+
+
+def test_native_member_culling_follows_platform_safety_boundary():
+    assert AgentFlowPack()._native_member_culling() is (os.name != "nt")
 
 
 def test_agentflow_pack_builds_readonly_parallel_pipeline(tmp_path: Path):
     round_dir = tmp_path / "rounds" / "001"
     results = asyncio.run(agentflow().run(
         "find the root cause", ["inspect logs", "trace code"], {}, tmp_path,
-        round_dir, concurrency=2, timeout=5))
+        round_dir, concurrency=2, timeout=5, culling_policy=CULLING_POLICY))
     pipeline = json.loads((round_dir / "agentflow" / "pipeline.json").read_text(encoding="utf-8"))
     assert pipeline["concurrency"] == 2 and len(pipeline["nodes"]) == 2
-    assert all(node["tools"] == "read_only" and node["timeout_seconds"] > 5
-               for node in pipeline["nodes"])
+    scouts, controller = pipeline["nodes"]
+    assert "as" not in scouts["fanout"] and len(scouts["fanout"]["values"]) == 2
+    assert controller["schedule"]["until_fanout_settles_from"] == "scouts"
+    assert controller["schedule"]["actuation"] == "output_json"
+    assert controller["schedule"]["every_seconds"] == 40
+    assert all(node["tools"] == "read_only" for node in pipeline["nodes"])
+    assert scouts["timeout_seconds"] > 5 and controller["timeout_seconds"] == 5
     safe_args = (["--ignore-user-config", "--ephemeral", "-c", 'windows.sandbox="elevated"']
                  if os.name == "nt" else ["--ignore-user-config", "--ephemeral"])
-    assert all(node["extra_args"] == safe_args
-               for node in pipeline["nodes"])
+    assert all(node["extra_args"] == safe_args for node in pipeline["nodes"])
+    mapping = json.loads((round_dir / "agentflow" / "worker-map.json").read_text())
+    assert mapping == {"scout-1-1": "scouts_0", "scout-1-2": "scouts_1"}
     assert all(result["backend"] == "agentflow" and result["status"] == "completed"
                for result in results)
     assert [result["summary"] for result in results] == ["evidence 1", "evidence 2"]
@@ -46,6 +61,19 @@ def test_agentflow_pack_builds_readonly_parallel_pipeline(tmp_path: Path):
         artifact = round_dir / "scouts" / result["worker_id"]
         prompt = (artifact / "prompt.txt").read_bytes()
         assert (artifact / "prompt.sha256").read_text() == hashlib.sha256(prompt).hexdigest()
+
+
+def test_agentflow_can_disable_native_member_culling(tmp_path: Path):
+    pack = AgentFlowPack(prefix=[sys.executable, str(FAKE_AGENTFLOW)])
+    pack._native_member_culling = lambda: False
+    round_dir = tmp_path / "rounds" / "001"
+    results = asyncio.run(pack.run(
+        "hunt", ["one", "two"], {}, tmp_path, round_dir, 2, 5,
+        culling_policy=CULLING_POLICY))
+    pipeline = json.loads((round_dir / "agentflow" / "pipeline.json").read_text())
+    audit = json.loads((round_dir / "agentflow" / "controller-audit.json").read_text())
+    assert len(pipeline["nodes"]) == 1 and audit["enabled"] is False
+    assert all(result["status"] == "completed" for result in results)
 
 
 def test_engine_auto_pack_invokes_agentflow_for_distinct_requested_missions(tmp_path: Path):
@@ -72,7 +100,7 @@ def test_engine_auto_pack_prefers_agentflow_for_parallel_hunt(tmp_path: Path):
                     {"agentflow": {"enabled": True}})
     engine.agentflow = agentflow()
 
-    contract = RunContract("hunt", str(tmp_path), budget=Budget(max_total_workers=4),
+    contract = RunContract("hunt", str(tmp_path), budget=Budget(max_total_workers=5),
                            pack=PackPolicy(mode="on", backend="auto", initial_workers=2,
                                            concurrency=2))
     state = engine.new_run(contract); state.status = RunStatus.WORKING
@@ -84,6 +112,40 @@ def test_engine_auto_pack_prefers_agentflow_for_parallel_hunt(tmp_path: Path):
     selection = next(event for event in events if event["type"] == "pack_backend_selected")
     assert selection["selected_backend"] == "agentflow"
     assert selection["qualified_parallel_pack"] is True
+
+
+def test_agentflow_imports_only_applied_controller_cull(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HOUND_FAKE_AGENTFLOW_CULL", "1")
+    round_dir = tmp_path / "rounds" / "001"
+    results = asyncio.run(agentflow().run(
+        "hunt", ["audit", "compare"], {}, tmp_path, round_dir, 2, 5,
+        culling_policy=CULLING_POLICY))
+    assert results[0]["status"] == "culled"
+    assert results[0]["agentflow_node_id"] == "scouts_0"
+    assert "duplicates" in results[0]["cull_reason"]
+    assert "scout-1-1" in (tmp_path / "cull-decisions.jsonl").read_text()
+    recovered = asyncio.run(agentflow().recover(round_dir, 8192))
+    assert recovered[0]["status"] == "culled"
+    assert len((tmp_path / "cull-decisions.jsonl").read_text().splitlines()) == 1
+
+    record = {"id": "outer", "status": "cancelled", "nodes": {"scouts_0": {
+        "status": "cancelled", "exit_code": None, "stdout_lines": [],
+        "stderr_lines": [], "trace_events": []}}}
+    outer = asyncio.run(agentflow()._results(
+        record, ["audit"], round_dir, 8192,
+        worker_map={"scout-1-1": "scouts_0"}))
+    assert outer[0]["status"] == "cancelled"
+
+
+def test_agentflow_controller_audit_rejects_rerun(tmp_path: Path):
+    run_dir = tmp_path / "native" / "artifacts" / "scout_controller"
+    run_dir.mkdir(parents=True)
+    (run_dir / "periodic-actions-tick-2.json").write_text(json.dumps({
+        "analysis": "bad", "actions": [
+            {"kind": "rerun", "node_ids": ["scouts_0"], "reason": "bad"}]}))
+    _, violations = agentflow()._controller_audit(
+        tmp_path, {"id": "native"}, {"scouts_0", "scouts_1"}, CULLING_POLICY)
+    assert any("non-cancel" in item for item in violations)
 
 
 def test_agentflow_timeout_recovers_completed_scout(tmp_path: Path, monkeypatch):
