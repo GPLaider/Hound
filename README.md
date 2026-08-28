@@ -69,9 +69,11 @@ The direct fallback retains live score-based sequential culling. It invokes Code
 ```text
 hound install-skill
 hound uninstall-skill
+hound install-skill --project
+hound uninstall-skill --project
 ```
 
-Installation is project-local at `.agents/skills/hounds/SKILL.md`, never automatic, and refuses overwrite/removal of unowned content without explicit `--force` on install.
+Installation defaults to the user-wide `~/.agents/skills/hounds/SKILL.md`; `--project` selects the current project's `.agents/skills/hounds/SKILL.md`. It is never automatic, treats an identical file as already installed, and refuses overwrite/removal of modified or unowned content without explicit `--force` on install. `hound doctor` reports aggregate, user-wide, and project-local installation states separately.
 
 ## Exit codes
 

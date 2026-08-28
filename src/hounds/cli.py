@@ -74,9 +74,14 @@ def parser() -> argparse.ArgumentParser:
     cancel = commands.add_parser("cancel", help="request cancellation")
     cancel.add_argument("run_id")
     commands.add_parser("doctor", help="check local capabilities without modifying them")
-    install = commands.add_parser("install-skill", help="install project-local Hound skill")
+    install = commands.add_parser("install-skill", help="install user-wide Hound skill")
     install.add_argument("--force", action="store_true")
-    commands.add_parser("uninstall-skill", help="remove only a Hound-installed project skill")
+    install.add_argument("--project", action="store_true",
+                         help="install only for the current project")
+    uninstall = commands.add_parser(
+        "uninstall-skill", help="remove only a Hound-installed user-wide skill")
+    uninstall.add_argument("--project", action="store_true",
+                           help="remove only from the current project")
     return root
 
 
@@ -259,6 +264,11 @@ def show_workers(run_id: str, root: Path) -> int:
     return 0
 
 
+def skill_path(root: Path, project: bool = False) -> Path:
+    base = root if project else Path.home()
+    return base / ".agents" / "skills" / "hounds" / "SKILL.md"
+
+
 def doctor(root: Path) -> int:
     config = load_config(root)
     codex_config, agentflow_config = config.get("codex", {}), config.get("agentflow", {})
@@ -277,6 +287,7 @@ def doctor(root: Path) -> int:
     environment = codex_environment()
     trusted_python = trusted_python_executable()
     worker_python = resolve_executable("python", root, environment)
+    user_skill, project_skill = skill_path(root), skill_path(root, project=True)
     details = {"python": platform.python_version(), "python_ok": sys.version_info >= (3, 11),
                "trusted_python": trusted_python, "worker_python": worker_python,
                "worker_python_pinned": bool(worker_python and os.path.normcase(worker_python) ==
@@ -285,7 +296,9 @@ def doctor(root: Path) -> int:
                "codex": codex, "workspace_writable": workspace_writable,
                "workspace_lock": lock, "workspace_lock_available": lock["available"],
                "git_repository": False,
-               "skill_installed": (root / ".agents" / "skills" / "hounds" / "SKILL.md").exists(),
+               "skill_installed": user_skill.exists() or project_skill.exists(),
+               "skill_user_installed": user_skill.exists(),
+               "skill_project_installed": project_skill.exists(),
                "agentflow": agentflow, "agentflow_enabled": agentflow_config.get("enabled", True),
                "agentflow_pack_ready": False}
     if write_error:
@@ -335,19 +348,23 @@ def doctor(root: Path) -> int:
     return 0 if codex and all(details.get(name) for name in required) else 4
 
 
-def install_skill(root: Path, force: bool) -> int:
-    target = root / ".agents" / "skills" / "hounds" / "SKILL.md"
-    if target.exists() and not force:
-        print(f"refusing to overwrite: {target}; pass --force")
-        return 4
+def install_skill(root: Path, force: bool, project: bool = False) -> int:
+    target = skill_path(root, project)
+    if target.exists():
+        if target.read_text(encoding="utf-8") == SKILL:
+            print(f"already installed: {target}")
+            return 0
+        if not force:
+            print(f"refusing to overwrite: {target}; pass --force")
+            return 4
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(SKILL, encoding="utf-8", newline="\n")
     print(f"installed: {target}")
     return 0
 
 
-def uninstall_skill(root: Path) -> int:
-    target = root / ".agents" / "skills" / "hounds" / "SKILL.md"
+def uninstall_skill(root: Path, project: bool = False) -> int:
+    target = skill_path(root, project)
     if not target.exists():
         print("not installed")
         return 0
@@ -383,8 +400,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"cancel requested: {args.run_id}")
                 return 0
             if args.command == "doctor": return doctor(root)
-            if args.command == "install-skill": return install_skill(root, args.force)
-            if args.command == "uninstall-skill": return uninstall_skill(root)
+            if args.command == "install-skill":
+                return install_skill(root, args.force, args.project)
+            if args.command == "uninstall-skill": return uninstall_skill(root, args.project)
         except (ValueError, OSError, json.JSONDecodeError, HoundEnvironmentError) as error:
             print(f"hound: {error}", file=sys.stderr)
             return 4

@@ -34,6 +34,29 @@ def test_installed_skill_source_stays_in_sync():
     assert (Path(__file__).parents[1] / "skills/hounds/SKILL.md").read_text(encoding="utf-8") == SKILL
 
 
+def test_skill_install_uninstall_scopes_and_ownership(tmp_path: Path, monkeypatch, capsys):
+    home, workspace = tmp_path / "home", tmp_path / "workspace"
+    home.mkdir(); workspace.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.chdir(workspace)
+    user_skill = home / ".agents" / "skills" / "hounds" / "SKILL.md"
+    project_skill = workspace / ".agents" / "skills" / "hounds" / "SKILL.md"
+
+    assert main(["install-skill"]) == 0
+    assert user_skill.read_text(encoding="utf-8") == SKILL and not project_skill.exists()
+    assert main(["install-skill"]) == 0
+    assert "already installed:" in capsys.readouterr().out
+
+    assert main(["install-skill", "--project"]) == 0
+    project_skill.write_text("custom\n", encoding="utf-8")
+    assert main(["uninstall-skill", "--project"]) == 4
+    assert main(["install-skill", "--project"]) == 4
+    assert main(["install-skill", "--project", "--force"]) == 0
+    assert main(["uninstall-skill", "--project"]) == 0 and not project_skill.exists()
+    assert main(["uninstall-skill"]) == 0 and not user_skill.exists()
+
+
 def test_python_src_gets_safe_default_verification(tmp_path: Path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
@@ -170,6 +193,12 @@ def test_doctor_honors_config_and_probes_workspace(tmp_path: Path, monkeypatch, 
         '[codex]\nexecutable = "custom-codex"\n'
         '[agentflow]\nenabled = false\nexecutable = "custom-agentflow"\n', encoding="utf-8")
     requested: list[str] = []
+    home = tmp_path / "home"
+    user_skill = home / ".agents" / "skills" / "hounds" / "SKILL.md"
+    user_skill.parent.mkdir(parents=True)
+    user_skill.write_text(SKILL, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
 
     def resolve(name: str, _root: Path, *_args) -> str:
         requested.append(name)
@@ -200,6 +229,9 @@ def test_doctor_honors_config_and_probes_workspace(tmp_path: Path, monkeypatch, 
     assert details["workspace_lock_available"] is True
     assert details["workspace_lock"]["held"] is False
     assert details["agentflow_enabled"] is False
+    assert details["skill_installed"] is True
+    assert details["skill_user_installed"] is True
+    assert details["skill_project_installed"] is False
     assert not list(tmp_path.glob(".hound-doctor-*"))
 
 
